@@ -4,7 +4,7 @@ A browser-based layout tool for planning **triangular sail shade canopies** (tol
 
 You drag canopy triangles around an L-shaped ground plan, rotate them, and check coverage from the top, front, side, and a live 3D preview before buying or installing anything.
 
-![Toldo Designer — three orthographic views and 3D preview](docs/three-views-final.png)
+![Toldo Designer — three orthographic views and 3D preview](docs/three-views-final.jpg)
 
 ## What the shapes mean
 

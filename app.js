@@ -79,6 +79,9 @@ const state = {
   drag: null, // { kind: "move" | "rotate", item, viewKey, ... }
   // L-shape bbox in world units (centered at origin).
   baseBbox: null,
+  // Name of the currently-loaded/saved design, if any. Used as the default
+  // file name when exporting.
+  currentDesignName: null,
 };
 
 // Per-view runtime: { canvas, zoomGroup, zoom, panX, panY, def }
@@ -93,6 +96,9 @@ const itemList = document.getElementById("item-list");
 const scaleLabel = document.getElementById("scale-label");
 const saveBtn = document.getElementById("save-btn");
 const designList = document.getElementById("design-list");
+const exportBtn = document.getElementById("export-btn");
+const importBtn = document.getElementById("import-btn");
+const importFileInput = document.getElementById("import-file");
 
 scaleLabel.textContent = config.pxPerUnit;
 document.getElementById("rect1-label").textContent =
@@ -344,7 +350,8 @@ function projectPreview(p, view) {
   const ce = Math.cos(elRad);
   const se = Math.sin(elRad);
   [y, z] = [y * ce - z * se, y * se + z * ce];
-  return [x, -z];
+  // Mirror horizontally so the preview's orientation matches expectations.
+  return [-x, -z];
 }
 
 function drawBasePreview(view) {
@@ -918,7 +925,9 @@ function onPointerMove(e) {
   } else if (drag.kind === "orbit") {
     const dx = e.clientX - drag.startClientX;
     const dy = e.clientY - drag.startClientY;
-    view.camera.azimuth = drag.startAzimuth + dx * 0.5;
+    // Negative dx because the projection is mirrored horizontally; this
+    // keeps "drag right rotates view right" intuitive.
+    view.camera.azimuth = drag.startAzimuth - dx * 0.5;
     view.camera.elevation = Math.max(
       -89,
       Math.min(89, drag.startElevation - dy * 0.5),
@@ -1206,6 +1215,7 @@ function saveCurrentDesign() {
     savedAt: new Date().toISOString(),
   };
   persistDesigns(designs);
+  state.currentDesignName = trimmed;
   refreshDesignList();
 }
 
@@ -1221,6 +1231,7 @@ function loadDesign(name) {
   }
   clearItems();
   restoreDesign(design);
+  state.currentDesignName = name;
   autosave();
 }
 
@@ -1262,10 +1273,79 @@ function refreshDesignList() {
   });
 }
 
+// ---------- Export / Import ----------
+
+function exportCurrentDesign() {
+  const defaultName = state.currentDesignName || "untitled";
+  const promptInput = prompt("Name for the exported design:", defaultName);
+  if (promptInput === null) return; // user cancelled
+  const name = promptInput.trim() || defaultName;
+  state.currentDesignName = name;
+
+  const data = serializeDesign();
+  data.name = name;
+  data.exportedAt = new Date().toISOString();
+  data.format = "toldo-design-v1";
+  const json = JSON.stringify(data, null, 2);
+  const blob = new Blob([json], { type: "application/json" });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement("a");
+  a.href = url;
+  // Sanitize for filesystem: replace whitespace with dashes and drop
+  // characters that aren't safe across operating systems.
+  const safeName =
+    name
+      .replace(/\s+/g, "-")
+      .replace(/[^A-Za-z0-9._\-]/g, "")
+      .slice(0, 80) || "design";
+  a.download = `toldo-${safeName}.json`;
+  document.body.appendChild(a);
+  a.click();
+  document.body.removeChild(a);
+  URL.revokeObjectURL(url);
+}
+
+function importDesignFromFile(file) {
+  const reader = new FileReader();
+  reader.onload = () => {
+    let data;
+    try {
+      data = JSON.parse(reader.result);
+    } catch (err) {
+      alert(`Could not parse the file as JSON: ${err.message}`);
+      return;
+    }
+    if (
+      state.items.length > 0 &&
+      !confirm("Importing will replace the current design. Continue?")
+    ) {
+      return;
+    }
+    clearItems();
+    restoreDesign(data);
+    if (typeof data.name === "string" && data.name.trim()) {
+      state.currentDesignName = data.name.trim();
+    }
+    autosave();
+  };
+  reader.onerror = () => {
+    alert("Could not read the file.");
+  };
+  reader.readAsText(file);
+}
+
 // ---------- Wire it up ----------
 
 addBtn.addEventListener("click", addTriangle);
 saveBtn.addEventListener("click", saveCurrentDesign);
+exportBtn.addEventListener("click", exportCurrentDesign);
+importBtn.addEventListener("click", () => importFileInput.click());
+importFileInput.addEventListener("change", (e) => {
+  const file = e.target.files?.[0];
+  if (file) importDesignFromFile(file);
+  // Reset so picking the same file again still fires "change".
+  e.target.value = "";
+});
 window.addEventListener("pointermove", onPointerMove);
 window.addEventListener("pointerup", onPointerUp);
 window.addEventListener("resize", redraw);
