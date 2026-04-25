@@ -35,7 +35,30 @@
     </aside>
 
     <main class="stage">
-      <svg id="canvas" xmlns="http://www.w3.org/2000/svg"></svg>
+      <section class="view" data-view="top">
+        <header class="view-label">Top — X · Y · rotate Z</header>
+        <svg
+          class="canvas"
+          data-view="top"
+          xmlns="http://www.w3.org/2000/svg"
+        ></svg>
+      </section>
+      <section class="view" data-view="front">
+        <header class="view-label">Front — X · Z · rotate Y</header>
+        <svg
+          class="canvas"
+          data-view="front"
+          xmlns="http://www.w3.org/2000/svg"
+        ></svg>
+      </section>
+      <section class="view" data-view="side">
+        <header class="view-label">Side — Y · Z · rotate X</header>
+        <svg
+          class="canvas"
+          data-view="side"
+          xmlns="http://www.w3.org/2000/svg"
+        ></svg>
+      </section>
     </main>
 
     <script src="app.js"></script>
