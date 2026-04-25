@@ -82,6 +82,11 @@ const state = {
   // Name of the currently-loaded/saved design, if any. Used as the default
   // file name when exporting.
   currentDesignName: null,
+  // Per-design display options. Persisted alongside items so each design
+  // remembers its own settings.
+  display: {
+    trianglesOpaque: false,
+  },
 };
 
 // Per-view runtime: { canvas, zoomGroup, zoom, panX, panY, def }
@@ -99,6 +104,9 @@ const designList = document.getElementById("design-list");
 const exportBtn = document.getElementById("export-btn");
 const importBtn = document.getElementById("import-btn");
 const importFileInput = document.getElementById("import-file");
+const toggleTriangleOpacityBtn = document.getElementById(
+  "toggle-triangle-opacity",
+);
 
 scaleLabel.textContent = config.pxPerUnit;
 document.getElementById("rect1-label").textContent =
@@ -1071,6 +1079,30 @@ function redrawPreview() {
   }
 }
 
+// ---------- Display options ----------
+
+function applyDisplayOptions() {
+  document.body.classList.toggle(
+    "triangles-opaque",
+    !!state.display.trianglesOpaque,
+  );
+  if (toggleTriangleOpacityBtn) {
+    toggleTriangleOpacityBtn.setAttribute(
+      "aria-pressed",
+      state.display.trianglesOpaque ? "true" : "false",
+    );
+    toggleTriangleOpacityBtn.title = state.display.trianglesOpaque
+      ? "Triangles opaque — click for transparent"
+      : "Triangles transparent — click for opaque";
+  }
+}
+
+function toggleTriangleOpacity() {
+  state.display.trianglesOpaque = !state.display.trianglesOpaque;
+  applyDisplayOptions();
+  autosave();
+}
+
 // ---------- Saved designs ----------
 
 function loadDesigns() {
@@ -1107,6 +1139,7 @@ function serializeDesign() {
       acc[key] = entry;
       return acc;
     }, {}),
+    display: { ...state.display },
   };
 }
 
@@ -1164,6 +1197,12 @@ function restoreDesign(saved) {
     if (typeof data.panY === "number") views.top.panY = data.panY;
     applyZoomTransform(views.top);
   }
+  if (data.display) {
+    if (typeof data.display.trianglesOpaque === "boolean") {
+      state.display.trianglesOpaque = data.display.trianglesOpaque;
+    }
+  }
+  applyDisplayOptions();
   refreshItemList();
   // The preview triangles were drawn with the default camera; re-render
   // now that any restored camera angles are applied.
@@ -1338,6 +1377,7 @@ function importDesignFromFile(file) {
 
 addBtn.addEventListener("click", addTriangle);
 saveBtn.addEventListener("click", saveCurrentDesign);
+toggleTriangleOpacityBtn.addEventListener("click", toggleTriangleOpacity);
 exportBtn.addEventListener("click", exportCurrentDesign);
 importBtn.addEventListener("click", () => importFileInput.click());
 importFileInput.addEventListener("change", (e) => {
@@ -1353,5 +1393,6 @@ window.addEventListener("resize", redraw);
 setupViews();
 buildSizeList();
 refreshDesignList();
+applyDisplayOptions();
 redraw();
 restoreAutosave();

@@ -207,6 +207,66 @@ body {
         "top front side"
         "preview preview preview";
     overflow: hidden;
+    position: relative;
+}
+
+.tools-panel {
+    position: absolute;
+    top: 8px;
+    right: 8px;
+    z-index: 5;
+    display: flex;
+    flex-direction: column;
+    align-items: stretch;
+    gap: 4px;
+    background: rgba(255, 255, 255, 0.95);
+    border: 1px solid #e5e7eb;
+    border-radius: 8px;
+    padding: 6px;
+    box-shadow: 0 1px 3px rgba(0, 0, 0, 0.06);
+    min-width: 60px;
+}
+
+.tools-panel-title {
+    font-size: 10px;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+    color: #6b7280;
+    text-align: center;
+    padding: 2px 4px 4px;
+    border-bottom: 1px solid #eef0f3;
+}
+
+.display-tools {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 4px;
+}
+
+.tool-btn {
+    width: 30px;
+    height: 30px;
+    padding: 0;
+    border: none;
+    background: transparent;
+    border-radius: 5px;
+    cursor: pointer;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    color: #4b5563;
+}
+
+.tool-btn:hover {
+    background: #f4f5f7;
+    color: #1f2937;
+}
+
+.tool-btn[aria-pressed="true"] {
+    background: #eff4ff;
+    color: #1d4ed8;
 }
 
 .view {
@@ -292,9 +352,17 @@ body {
     cursor: grab;
 }
 
+body.triangles-opaque .triangle-shape {
+    fill: rgba(37, 99, 235, 1);
+}
+
 .triangle-shape.dragging {
     cursor: grabbing;
     fill: rgba(37, 99, 235, 0.6);
+}
+
+body.triangles-opaque .triangle-shape.dragging {
+    fill: rgba(29, 78, 216, 1);
 }
 
 .triangle-shape.selected {

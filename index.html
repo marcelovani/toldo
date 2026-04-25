@@ -3,7 +3,7 @@
   <head>
     <meta charset="UTF-8" />
     <title>Toldo Designer</title>
-    <link rel="stylesheet" href="style.css?v=3" />
+    <link rel="stylesheet" href="style.css?v=5" />
   </head>
   <body>
     <aside class="sidebar">
@@ -49,6 +49,36 @@
     </aside>
 
     <main class="stage">
+      <section class="tools-panel" aria-label="Tools">
+        <header class="tools-panel-title">Tools</header>
+        <div class="display-tools" role="toolbar" aria-label="Display options">
+          <button
+            id="toggle-triangle-opacity"
+            class="tool-btn"
+            type="button"
+            title="Toggle triangle fill (transparent / opaque)"
+            aria-pressed="false"
+          >
+            <svg viewBox="0 0 16 16" width="16" height="16" aria-hidden="true">
+              <rect
+                x="2.5"
+                y="2.5"
+                width="11"
+                height="11"
+                rx="1.5"
+                fill="none"
+                stroke="currentColor"
+                stroke-width="1.4"
+              />
+              <path
+                d="M 2.5 13.5 L 13.5 2.5 L 13.5 13.5 Z"
+                fill="currentColor"
+                fill-opacity="0.55"
+              />
+            </svg>
+          </button>
+        </div>
+      </section>
       <section class="view" data-view="top">
         <header class="view-label">Top — X · Y · rotate Z</header>
         <svg
@@ -83,6 +113,6 @@
       </section>
     </main>
 
-    <script src="app.js?v=3"></script>
+    <script src="app.js?v=5"></script>
   </body>
 </html>
