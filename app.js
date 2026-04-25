@@ -103,6 +103,8 @@ const saveBtn = document.getElementById("save-btn");
 const designList = document.getElementById("design-list");
 const exportBtn = document.getElementById("export-btn");
 const exportStlBtn = document.getElementById("export-stl-btn");
+const exportDaeBtn = document.getElementById("export-dae-btn");
+const exportDxfBtn = document.getElementById("export-dxf-btn");
 const importBtn = document.getElementById("import-btn");
 const importFileInput = document.getElementById("import-file");
 const toggleTriangleOpacityBtn = document.getElementById(
@@ -1431,7 +1433,9 @@ function buildSceneTriangles() {
   const tris = [];
   const b = state.baseBbox;
   const heightPx = config.rectHeight * config.pxPerUnit;
-  tris.push(...boxTriangles(b.rect1.x, b.rect1.y, 0, b.rect1.w, b.rect1.h, heightPx));
+  tris.push(
+    ...boxTriangles(b.rect1.x, b.rect1.y, 0, b.rect1.w, b.rect1.h, heightPx),
+  );
   tris.push(
     ...boxTriangles(b.anchorX - b.r2h, b.anchorY, 0, b.r2h, b.r2w, heightPx),
   );
@@ -1487,6 +1491,142 @@ function exportCurrentDesignAsStl() {
   downloadBlob(stl, `toldo-${safeFilename(name)}.stl`, "model/stl");
 }
 
+// ---------- DAE (Collada) export ----------
+
+function escapeXml(s) {
+  return String(s).replace(
+    /[<>&"']/g,
+    (c) =>
+      ({
+        "<": "&lt;",
+        ">": "&gt;",
+        "&": "&amp;",
+        '"': "&quot;",
+        "'": "&apos;",
+      })[c],
+  );
+}
+
+function trianglesToCollada(name, triangles) {
+  const positions = [];
+  const indices = [];
+  for (let i = 0; i < triangles.length; i++) {
+    const [a, b, c] = triangles[i];
+    positions.push(
+      pxToUnits(a[0]),
+      pxToUnits(a[1]),
+      pxToUnits(a[2]),
+      pxToUnits(b[0]),
+      pxToUnits(b[1]),
+      pxToUnits(b[2]),
+      pxToUnits(c[0]),
+      pxToUnits(c[1]),
+      pxToUnits(c[2]),
+    );
+    indices.push(i * 3, i * 3 + 1, i * 3 + 2);
+  }
+  const vertCount = triangles.length * 3;
+  const now = new Date().toISOString();
+  const safeName = escapeXml(name);
+  return `<?xml version="1.0" encoding="UTF-8"?>
+<COLLADA xmlns="http://www.collada.org/2005/11/COLLADASchema" version="1.4.1">
+  <asset>
+    <created>${now}</created>
+    <modified>${now}</modified>
+    <unit name="meter" meter="1"/>
+    <up_axis>Z_UP</up_axis>
+  </asset>
+  <library_geometries>
+    <geometry id="toldo-mesh" name="${safeName}">
+      <mesh>
+        <source id="toldo-positions">
+          <float_array id="toldo-positions-array" count="${positions.length}">${positions.join(" ")}</float_array>
+          <technique_common>
+            <accessor source="#toldo-positions-array" count="${vertCount}" stride="3">
+              <param name="X" type="float"/>
+              <param name="Y" type="float"/>
+              <param name="Z" type="float"/>
+            </accessor>
+          </technique_common>
+        </source>
+        <vertices id="toldo-vertices">
+          <input semantic="POSITION" source="#toldo-positions"/>
+        </vertices>
+        <triangles count="${triangles.length}">
+          <input semantic="VERTEX" source="#toldo-vertices" offset="0"/>
+          <p>${indices.join(" ")}</p>
+        </triangles>
+      </mesh>
+    </geometry>
+  </library_geometries>
+  <library_visual_scenes>
+    <visual_scene id="scene" name="scene">
+      <node id="toldo-node" name="${safeName}">
+        <instance_geometry url="#toldo-mesh"/>
+      </node>
+    </visual_scene>
+  </library_visual_scenes>
+  <scene>
+    <instance_visual_scene url="#scene"/>
+  </scene>
+</COLLADA>
+`;
+}
+
+function exportCurrentDesignAsDae() {
+  if (!state.baseBbox) {
+    alert("Nothing to export yet — open a design first.");
+    return;
+  }
+  const name = promptExportName();
+  if (name === null) return;
+  const triangles = buildSceneTriangles();
+  const dae = trianglesToCollada(name, triangles);
+  downloadBlob(dae, `toldo-${safeFilename(name)}.dae`, "model/vnd.collada+xml");
+}
+
+// ---------- DXF export ----------
+
+// Minimal AutoCAD R12 DXF with one 3DFACE entity per triangle. The
+// fourth corner is duplicated from the third so the face stays
+// triangular, which every DXF reader I've checked accepts.
+function trianglesToDxf(triangles) {
+  const out = [];
+  const push = (...pairs) => {
+    for (const v of pairs) out.push(String(v));
+  };
+  push("0", "SECTION", "2", "HEADER");
+  push("9", "$ACADVER", "1", "AC1009");
+  push("0", "ENDSEC");
+  push("0", "SECTION", "2", "TABLES");
+  push("0", "TABLE", "2", "LAYER", "70", "1");
+  push("0", "LAYER", "2", "TOLDO", "70", "0", "62", "7", "6", "CONTINUOUS");
+  push("0", "ENDTAB", "0", "ENDSEC");
+  push("0", "SECTION", "2", "ENTITIES");
+  for (const [a, b, c] of triangles) {
+    push("0", "3DFACE", "8", "TOLDO");
+    push("10", pxToUnits(a[0]), "20", pxToUnits(a[1]), "30", pxToUnits(a[2]));
+    push("11", pxToUnits(b[0]), "21", pxToUnits(b[1]), "31", pxToUnits(b[2]));
+    push("12", pxToUnits(c[0]), "22", pxToUnits(c[1]), "32", pxToUnits(c[2]));
+    // Duplicate third vertex into the 4th 3DFACE slot.
+    push("13", pxToUnits(c[0]), "23", pxToUnits(c[1]), "33", pxToUnits(c[2]));
+  }
+  push("0", "ENDSEC", "0", "EOF");
+  return out.join("\n") + "\n";
+}
+
+function exportCurrentDesignAsDxf() {
+  if (!state.baseBbox) {
+    alert("Nothing to export yet — open a design first.");
+    return;
+  }
+  const name = promptExportName();
+  if (name === null) return;
+  const triangles = buildSceneTriangles();
+  const dxf = trianglesToDxf(triangles);
+  downloadBlob(dxf, `toldo-${safeFilename(name)}.dxf`, "image/vnd.dxf");
+}
+
 function importDesignFromFile(file) {
   const reader = new FileReader();
   reader.onload = () => {
@@ -1523,6 +1663,8 @@ saveBtn.addEventListener("click", saveCurrentDesign);
 toggleTriangleOpacityBtn.addEventListener("click", toggleTriangleOpacity);
 exportBtn.addEventListener("click", exportCurrentDesign);
 exportStlBtn.addEventListener("click", exportCurrentDesignAsStl);
+exportDaeBtn.addEventListener("click", exportCurrentDesignAsDae);
+exportDxfBtn.addEventListener("click", exportCurrentDesignAsDxf);
 importBtn.addEventListener("click", () => importFileInput.click());
 importFileInput.addEventListener("change", (e) => {
   const file = e.target.files?.[0];
