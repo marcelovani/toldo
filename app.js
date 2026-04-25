@@ -102,6 +102,7 @@ const scaleLabel = document.getElementById("scale-label");
 const saveBtn = document.getElementById("save-btn");
 const designList = document.getElementById("design-list");
 const exportBtn = document.getElementById("export-btn");
+const exportStlBtn = document.getElementById("export-stl-btn");
 const importBtn = document.getElementById("import-btn");
 const importFileInput = document.getElementById("import-file");
 const toggleTriangleOpacityBtn = document.getElementById(
@@ -1314,34 +1315,176 @@ function refreshDesignList() {
 
 // ---------- Export / Import ----------
 
-function exportCurrentDesign() {
+function promptExportName() {
   const defaultName = state.currentDesignName || "untitled";
   const promptInput = prompt("Name for the exported design:", defaultName);
-  if (promptInput === null) return; // user cancelled
+  if (promptInput === null) return null;
   const name = promptInput.trim() || defaultName;
   state.currentDesignName = name;
+  return name;
+}
 
-  const data = serializeDesign();
-  data.name = name;
-  data.exportedAt = new Date().toISOString();
-  data.format = "toldo-design-v1";
-  const json = JSON.stringify(data, null, 2);
-  const blob = new Blob([json], { type: "application/json" });
-  const url = URL.createObjectURL(blob);
-  const a = document.createElement("a");
-  a.href = url;
-  // Sanitize for filesystem: replace whitespace with dashes and drop
-  // characters that aren't safe across operating systems.
-  const safeName =
+function safeFilename(name) {
+  return (
     name
       .replace(/\s+/g, "-")
       .replace(/[^A-Za-z0-9._\-]/g, "")
-      .slice(0, 80) || "design";
-  a.download = `toldo-${safeName}.json`;
+      .slice(0, 80) || "design"
+  );
+}
+
+function downloadBlob(content, filename, mimeType) {
+  const blob = new Blob([content], { type: mimeType });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement("a");
+  a.href = url;
+  a.download = filename;
   document.body.appendChild(a);
   a.click();
   document.body.removeChild(a);
   URL.revokeObjectURL(url);
+}
+
+function exportCurrentDesign() {
+  const name = promptExportName();
+  if (name === null) return;
+  const data = serializeDesign();
+  data.name = name;
+  data.exportedAt = new Date().toISOString();
+  data.format = "toldo-design-v1";
+  downloadBlob(
+    JSON.stringify(data, null, 2),
+    `toldo-${safeFilename(name)}.json`,
+    "application/json",
+  );
+}
+
+// ---------- STL export ----------
+
+// All triangles are emitted in real-world units (1 unit = config.pxPerUnit
+// pixels in the canvas). STL doesn't carry a unit, but most 3D apps assume
+// millimetres or some user-configured scale; sticking to the design's
+// "units" makes downstream scaling trivial.
+function pxToUnits(px) {
+  return px / config.pxPerUnit;
+}
+
+// 12 triangles for an axis-aligned box (6 faces × 2 triangles each).
+function boxTriangles(x, y, z, w, h, d) {
+  const v = [
+    [x, y, z], // 0
+    [x + w, y, z], // 1
+    [x + w, y + h, z], // 2
+    [x, y + h, z], // 3
+    [x, y, z + d], // 4
+    [x + w, y, z + d], // 5
+    [x + w, y + h, z + d], // 6
+    [x, y + h, z + d], // 7
+  ];
+  // Each face gets its outward normal by ordering vertices CCW from outside.
+  return [
+    // Bottom (z = z, normal -Z): viewed from below, CCW is 0,3,2,1
+    [v[0], v[3], v[2]],
+    [v[0], v[2], v[1]],
+    // Top (z = z+d, normal +Z): viewed from above, CCW is 4,5,6,7
+    [v[4], v[5], v[6]],
+    [v[4], v[6], v[7]],
+    // Y-min face (normal -Y)
+    [v[0], v[1], v[5]],
+    [v[0], v[5], v[4]],
+    // Y-max face (normal +Y)
+    [v[3], v[7], v[6]],
+    [v[3], v[6], v[2]],
+    // X-min face (normal -X)
+    [v[0], v[4], v[7]],
+    [v[0], v[7], v[3]],
+    // X-max face (normal +X)
+    [v[1], v[2], v[6]],
+    [v[1], v[6], v[5]],
+  ];
+}
+
+// 8 triangles for a triangular prism: 2 end caps + 3 side quads (each 2 tris).
+function trianglePrismTrianglesFor(item) {
+  const t = config.triangleThickness * config.pxPerUnit;
+  const top = item.points.map(([px, py]) => worldVertex3D([px, py, 0], item));
+  const bot = item.points.map(([px, py]) => worldVertex3D([px, py, t], item));
+  return [
+    // Top face (local z=0)
+    [top[0], top[1], top[2]],
+    // Bottom face (local z=t) — reversed for outward normal
+    [bot[0], bot[2], bot[1]],
+    // Three rectangular sides (each 2 triangles).
+    // Side between local edge (0 → 1):
+    [top[0], bot[0], bot[1]],
+    [top[0], bot[1], top[1]],
+    // Side (1 → 2):
+    [top[1], bot[1], bot[2]],
+    [top[1], bot[2], top[2]],
+    // Side (2 → 0):
+    [top[2], bot[2], bot[0]],
+    [top[2], bot[0], top[0]],
+  ];
+}
+
+function buildSceneTriangles() {
+  const tris = [];
+  const b = state.baseBbox;
+  const heightPx = config.rectHeight * config.pxPerUnit;
+  tris.push(...boxTriangles(b.rect1.x, b.rect1.y, 0, b.rect1.w, b.rect1.h, heightPx));
+  tris.push(
+    ...boxTriangles(b.anchorX - b.r2h, b.anchorY, 0, b.r2h, b.r2w, heightPx),
+  );
+  for (const item of state.items) {
+    tris.push(...trianglePrismTrianglesFor(item));
+  }
+  return tris;
+}
+
+function trianglesToStlAscii(name, triangles) {
+  const lines = [`solid ${name}`];
+  for (const [a, bb, c] of triangles) {
+    const ux = bb[0] - a[0],
+      uy = bb[1] - a[1],
+      uz = bb[2] - a[2];
+    const vx = c[0] - a[0],
+      vy = c[1] - a[1],
+      vz = c[2] - a[2];
+    let nx = uy * vz - uz * vy;
+    let ny = uz * vx - ux * vz;
+    let nz = ux * vy - uy * vx;
+    const len = Math.hypot(nx, ny, nz) || 1;
+    nx /= len;
+    ny /= len;
+    nz /= len;
+    lines.push(`  facet normal ${nx} ${ny} ${nz}`);
+    lines.push(`    outer loop`);
+    lines.push(
+      `      vertex ${pxToUnits(a[0])} ${pxToUnits(a[1])} ${pxToUnits(a[2])}`,
+    );
+    lines.push(
+      `      vertex ${pxToUnits(bb[0])} ${pxToUnits(bb[1])} ${pxToUnits(bb[2])}`,
+    );
+    lines.push(
+      `      vertex ${pxToUnits(c[0])} ${pxToUnits(c[1])} ${pxToUnits(c[2])}`,
+    );
+    lines.push(`    endloop`);
+    lines.push(`  endfacet`);
+  }
+  lines.push(`endsolid ${name}`);
+  return lines.join("\n") + "\n";
+}
+
+function exportCurrentDesignAsStl() {
+  if (!state.baseBbox) {
+    alert("Nothing to export yet — open a design first.");
+    return;
+  }
+  const name = promptExportName();
+  if (name === null) return;
+  const triangles = buildSceneTriangles();
+  const stl = trianglesToStlAscii(safeFilename(name), triangles);
+  downloadBlob(stl, `toldo-${safeFilename(name)}.stl`, "model/stl");
 }
 
 function importDesignFromFile(file) {
@@ -1379,6 +1522,7 @@ addBtn.addEventListener("click", addTriangle);
 saveBtn.addEventListener("click", saveCurrentDesign);
 toggleTriangleOpacityBtn.addEventListener("click", toggleTriangleOpacity);
 exportBtn.addEventListener("click", exportCurrentDesign);
+exportStlBtn.addEventListener("click", exportCurrentDesignAsStl);
 importBtn.addEventListener("click", () => importFileInput.click());
 importFileInput.addEventListener("change", (e) => {
   const file = e.target.files?.[0];
