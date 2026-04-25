@@ -1,37 +1,43 @@
-<!DOCTYPE html>
+<!doctype html>
 <html lang="en">
-<head>
-<meta charset="UTF-8" />
-<title>Toldo Designer</title>
-<link rel="stylesheet" href="style.css" />
-</head>
-<body>
-<aside class="sidebar">
-    <h1>Toldo Designer</h1>
+  <head>
+    <meta charset="UTF-8" />
+    <title>Toldo Designer</title>
+    <link rel="stylesheet" href="style.css" />
+  </head>
+  <body>
+    <aside class="sidebar">
+      <h1>Toldo Designer</h1>
 
-    <section class="panel">
+      <section class="panel">
         <h2>Triangle sizes</h2>
         <ul id="size-list" class="size-list"></ul>
         <button id="add-btn" class="primary" disabled>Add to canvas</button>
-    </section>
+      </section>
 
-    <section class="panel">
+      <section class="panel">
         <h2>Canvas</h2>
         <p class="hint">Scale: <span id="scale-label">50</span> px / unit</p>
-        <p class="hint">Rect 1: 1.5 × 3</p>
-        <p class="hint">Rect 2: 1.5 × 4 (rotated 90°)</p>
-    </section>
+        <p class="hint">Rect 1: <span id="rect1-label"></span></p>
+        <p class="hint">Rect 2: <span id="rect2-label"></span> (rotated 90°)</p>
+      </section>
 
-    <section class="panel">
+      <section class="panel">
         <h2>Items on canvas</h2>
         <ul id="item-list" class="item-list"></ul>
-    </section>
-</aside>
+      </section>
 
-<main class="stage">
-    <svg id="canvas" xmlns="http://www.w3.org/2000/svg"></svg>
-</main>
+      <section class="panel">
+        <h2>Saved designs</h2>
+        <button id="save-btn" class="primary">Save current design</button>
+        <ul id="design-list" class="design-list"></ul>
+      </section>
+    </aside>
 
-<script src="app.js"></script>
-</body>
+    <main class="stage">
+      <svg id="canvas" xmlns="http://www.w3.org/2000/svg"></svg>
+    </main>
+
+    <script src="app.js"></script>
+  </body>
 </html>
