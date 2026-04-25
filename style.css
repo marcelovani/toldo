@@ -179,24 +179,29 @@ body {
 
 .stage {
     flex: 1;
-    display: flex;
+    display: grid;
+    grid-template-columns: 1fr 1fr 1fr;
+    grid-template-rows: 1fr 1fr;
+    grid-template-areas:
+        "top front side"
+        "preview preview preview";
     overflow: hidden;
 }
 
 .view {
-    flex: 1 1 0;
     position: relative;
     overflow: hidden;
-    border-left: 1px solid #d1d5db;
     background:
         linear-gradient(#e8eaee 1px, transparent 1px) 0 0 / 50px 50px,
         linear-gradient(90deg, #e8eaee 1px, transparent 1px) 0 0 / 50px 50px,
         #f9fafb;
 }
 
-.view:first-child {
-    border-left: none;
-}
+.view[data-view="top"] { grid-area: top; border-right: 1px solid #d1d5db; border-bottom: 1px solid #d1d5db; }
+.view[data-view="front"] { grid-area: front; border-right: 1px solid #d1d5db; border-bottom: 1px solid #d1d5db; }
+.view[data-view="side"] { grid-area: side; border-bottom: 1px solid #d1d5db; }
+.view[data-view="preview"] { grid-area: preview; cursor: grab; }
+.view[data-view="preview"]:active { cursor: grabbing; }
 
 .view-label {
     position: absolute;
@@ -225,6 +230,12 @@ body {
     fill: #ffffff;
     stroke: #1f2937;
     stroke-width: 2;
+}
+
+.wireframe-edge {
+    stroke: #1f2937;
+    stroke-width: 1.5;
+    fill: none;
 }
 
 .ruler-baseline,

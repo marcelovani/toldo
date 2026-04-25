@@ -26,21 +26,20 @@ const VIEW_DEFS = {
     label: "Top",
     axes: ["X", "Y"],
     rotAxis: "rotZ",
+    editable: true,
     project: (p) => [p[0], p[1]],
     setItemUV: (item, u, v) => {
       item.x = u;
       item.y = v;
     },
     itemUV: (item) => [item.x, item.y],
-    // Half-widths (in units) used to draw the L-shape footprint in this
-    // view. Rendered as filled rectangles in the top view, and as a thin
-    // ground line in the other views.
     drawBase: drawBaseTop,
   },
   front: {
     label: "Front",
     axes: ["X", "Z"],
     rotAxis: "rotY",
+    editable: true,
     project: (p) => [p[0], -p[2]],
     setItemUV: (item, u, v) => {
       item.x = u;
@@ -53,6 +52,7 @@ const VIEW_DEFS = {
     label: "Side",
     axes: ["Y", "Z"],
     rotAxis: "rotX",
+    editable: true,
     project: (p) => [p[1], -p[2]],
     setItemUV: (item, u, v) => {
       item.y = u;
@@ -61,9 +61,15 @@ const VIEW_DEFS = {
     itemUV: (item) => [item.y, -item.z],
     drawBase: drawBaseSide,
   },
+  preview: {
+    label: "3D Preview",
+    editable: false,
+    project: projectPreview,
+    drawBase: drawBasePreview,
+  },
 };
 
-const VIEW_KEYS = ["top", "front", "side"];
+const VIEW_KEYS = ["top", "front", "side", "preview"];
 
 const state = {
   selectedSizeId: null,
@@ -204,6 +210,8 @@ function setupViews() {
       panX: 0,
       panY: 0,
       def: VIEW_DEFS[key],
+      // Camera for the orbit-able 3D preview; ignored by the other views.
+      camera: { azimuth: 30, elevation: 25 },
     };
     canvas.addEventListener("pointerdown", (e) =>
       onCanvasPointerDown(e, views[key]),
@@ -320,6 +328,88 @@ function drawBaseSide(view) {
   drawSilhouetteRect(view, yMin, yMax, -heightPx, 0);
   drawHorizontalRuler(view, yMin, yMax, -heightPx);
   drawZRuler(view, yMax);
+}
+
+// Orbit-camera orthographic projection for the 3D preview. Camera angles
+// are stored on view.camera as { azimuth, elevation } (degrees). At
+// (0, 0) the camera looks down the -Y axis (front view) with Z up.
+function projectPreview(p, view) {
+  const cam = view.camera || { azimuth: 30, elevation: 25 };
+  let [x, y, z] = p;
+  const azRad = (-cam.azimuth * Math.PI) / 180;
+  const ca = Math.cos(azRad);
+  const sa = Math.sin(azRad);
+  [x, y] = [x * ca - y * sa, x * sa + y * ca];
+  const elRad = (-cam.elevation * Math.PI) / 180;
+  const ce = Math.cos(elRad);
+  const se = Math.sin(elRad);
+  [y, z] = [y * ce - z * se, y * se + z * ce];
+  return [x, -z];
+}
+
+function drawBasePreview(view) {
+  const b = state.baseBbox;
+  const heightPx = config.rectHeight * config.pxPerUnit;
+  // Rect1 box, axis-aligned in world.
+  drawBoxWireframe(
+    view,
+    b.rect1.x,
+    b.rect1.y,
+    0,
+    b.rect1.w,
+    b.rect1.h,
+    heightPx,
+  );
+  // Rect2 was rotated 90° around the anchor in the XY plane; the resulting
+  // box is still axis-aligned, just with swapped X/Y dimensions and a
+  // shifted origin.
+  drawBoxWireframe(
+    view,
+    b.anchorX - b.r2h,
+    b.anchorY,
+    0,
+    b.r2h,
+    b.r2w,
+    heightPx,
+  );
+}
+
+function drawBoxWireframe(view, x, y, z, w, h, d) {
+  const corners = [
+    [x, y, z],
+    [x, y, z + d],
+    [x, y + h, z],
+    [x, y + h, z + d],
+    [x + w, y, z],
+    [x + w, y, z + d],
+    [x + w, y + h, z],
+    [x + w, y + h, z + d],
+  ];
+  const edges = [
+    [0, 2],
+    [2, 6],
+    [6, 4],
+    [4, 0], // bottom (z=0)
+    [1, 3],
+    [3, 7],
+    [7, 5],
+    [5, 1], // top (z=d)
+    [0, 1],
+    [2, 3],
+    [4, 5],
+    [6, 7], // verticals
+  ];
+  for (const [a, b] of edges) {
+    const pa = view.def.project(corners[a], view);
+    const pb = view.def.project(corners[b], view);
+    const line = document.createElementNS(SVG_NS, "line");
+    line.setAttribute("x1", pa[0]);
+    line.setAttribute("y1", pa[1]);
+    line.setAttribute("x2", pb[0]);
+    line.setAttribute("y2", pb[1]);
+    line.setAttribute("class", "wireframe-edge");
+    view.zoomGroup.appendChild(line);
+  }
 }
 
 function drawSilhouetteRect(view, uMin, uMax, vMin, vMax) {
@@ -590,15 +680,22 @@ function drawTriangleInView(item, view) {
 
   g.appendChild(deleteGroup);
 
-  g.addEventListener("pointerdown", (e) =>
-    onTrianglePointerDown(e, item, view),
-  );
-  rotateGroup.addEventListener("pointerdown", (e) =>
-    onRotateHandlePointerDown(e, item, view),
-  );
-  deleteGroup.addEventListener("pointerdown", (e) =>
-    onDeletePointerDown(e, item),
-  );
+  // Edit handlers only fire in views that allow editing. The 3D preview
+  // is read-only — pointer events fall through to the canvas and become
+  // an orbit drag.
+  if (view.def.editable) {
+    g.addEventListener("pointerdown", (e) =>
+      onTrianglePointerDown(e, item, view),
+    );
+    rotateGroup.addEventListener("pointerdown", (e) =>
+      onRotateHandlePointerDown(e, item, view),
+    );
+    deleteGroup.addEventListener("pointerdown", (e) =>
+      onDeletePointerDown(e, item),
+    );
+  } else {
+    g.style.pointerEvents = "none";
+  }
 
   view.zoomGroup.appendChild(g);
 
@@ -632,7 +729,7 @@ function updateTriangleInView(item, view) {
   // hull collapses to the original triangle; in the other views with the
   // triangle flat on the ground, it's a thin parallelogram.
   const prism3D = trianglePrismVertices(item);
-  const projAll = prism3D.map((p) => view.def.project(p));
+  const projAll = prism3D.map((p) => view.def.project(p, view));
   const hull = convexHull(projAll);
   parts.polygon.setAttribute(
     "points",
@@ -642,10 +739,10 @@ function updateTriangleInView(item, view) {
   // For the rotate-handle and bbox math we still want the projected top
   // face vertices.
   const projVerts = item.points.map((p) =>
-    view.def.project(worldVertex(p, item)),
+    view.def.project(worldVertex(p, item), view),
   );
 
-  const [cu, cv] = view.def.project([item.x, item.y, item.z || 0]);
+  const [cu, cv] = view.def.project([item.x, item.y, item.z || 0], view);
   parts.label.setAttribute("x", cu);
   parts.label.setAttribute("y", cv);
 
@@ -653,7 +750,7 @@ function updateTriangleInView(item, view) {
   // projected centroid by rotateHandleOffset. If the projection collapses
   // to the centroid (apex sits on the rotation axis), fall back to a fixed
   // offset directly above.
-  const apexProj = view.def.project(worldVertex(item.apex, item));
+  const apexProj = view.def.project(worldVertex(item.apex, item), view);
   const dx = apexProj[0] - cu;
   const dy = apexProj[1] - cv;
   const len = Math.hypot(dx, dy);
@@ -773,7 +870,7 @@ function onRotateHandlePointerDown(e, item, view) {
   e.preventDefault();
   e.stopPropagation();
   const pt = clientToWorld(view, e.clientX, e.clientY);
-  const [cu, cv] = view.def.project([item.x, item.y, item.z || 0]);
+  const [cu, cv] = view.def.project([item.x, item.y, item.z || 0], view);
   const startPointerAngle = Math.atan2(pt.v - cv, pt.u - cu);
   state.drag = {
     kind: "rotate",
@@ -812,12 +909,21 @@ function onPointerMove(e) {
     updateTriangleRender(item);
   } else if (drag.kind === "rotate") {
     const pt = clientToWorld(view, e.clientX, e.clientY);
-    const [cu, cv] = view.def.project([item.x, item.y, item.z || 0]);
+    const [cu, cv] = view.def.project([item.x, item.y, item.z || 0], view);
     const currentAngle = Math.atan2(pt.v - cv, pt.u - cu);
     const deltaRad = currentAngle - drag.startPointerAngle;
     const deltaDeg = (deltaRad * 180) / Math.PI;
     item[view.def.rotAxis] = drag.startRotValue + deltaDeg;
     updateTriangleRender(item);
+  } else if (drag.kind === "orbit") {
+    const dx = e.clientX - drag.startClientX;
+    const dy = e.clientY - drag.startClientY;
+    view.camera.azimuth = drag.startAzimuth + dx * 0.5;
+    view.camera.elevation = Math.max(
+      -89,
+      Math.min(89, drag.startElevation - dy * 0.5),
+    );
+    redrawPreview();
   }
 }
 
@@ -837,6 +943,8 @@ function onPointerUp(e) {
     }
   } else if (drag.kind === "rotate") {
     autosave();
+  } else if (drag.kind === "orbit") {
+    scheduleAutosave();
   }
   state.drag = null;
 }
@@ -845,6 +953,20 @@ function onCanvasPointerDown(e, view) {
   // If the press hits a triangle/handle, those handlers stop propagation.
   // Reaching here means an empty-canvas click → deselect.
   if (state.selectedItemId) setSelected(null);
+
+  // In the 3D preview, dragging the canvas orbits the camera.
+  if (view.def === VIEW_DEFS.preview) {
+    e.preventDefault();
+    state.drag = {
+      kind: "orbit",
+      view,
+      startClientX: e.clientX,
+      startClientY: e.clientY,
+      startAzimuth: view.camera.azimuth,
+      startElevation: view.camera.elevation,
+    };
+    view.canvas.setPointerCapture?.(e.pointerId);
+  }
 }
 
 function onCanvasWheel(e, view) {
@@ -921,6 +1043,25 @@ function redraw() {
   state.items.forEach(drawTriangleAllViews);
 }
 
+// Re-render only the preview view. Used while orbiting the camera.
+function redrawPreview() {
+  const view = views.preview;
+  if (!view) return;
+  clearView(view);
+  view.def.drawBase(view);
+  state.items.forEach((item) => {
+    drawTriangleInView(item, view);
+    updateTriangleInView(item, view);
+  });
+  if (state.selectedItemId) {
+    const sel = state.items.find((i) => i.id === state.selectedItemId);
+    if (sel) {
+      const parts = sel.viewParts.preview;
+      if (parts) parts.polygon.classList.add("selected");
+    }
+  }
+}
+
 // ---------- Saved designs ----------
 
 function loadDesigns() {
@@ -949,7 +1090,12 @@ function serializeDesign() {
     })),
     views: VIEW_KEYS.reduce((acc, key) => {
       const v = views[key];
-      acc[key] = { zoom: v.zoom, panX: v.panX, panY: v.panY };
+      const entry = { zoom: v.zoom, panX: v.panX, panY: v.panY };
+      if (v.def === VIEW_DEFS.preview) {
+        entry.azimuth = v.camera.azimuth;
+        entry.elevation = v.camera.elevation;
+      }
+      acc[key] = entry;
       return acc;
     }, {}),
   };
@@ -991,6 +1137,10 @@ function restoreDesign(saved) {
         if (typeof v.zoom === "number") views[key].zoom = v.zoom;
         if (typeof v.panX === "number") views[key].panX = v.panX;
         if (typeof v.panY === "number") views[key].panY = v.panY;
+        if (typeof v.azimuth === "number")
+          views[key].camera.azimuth = v.azimuth;
+        if (typeof v.elevation === "number")
+          views[key].camera.elevation = v.elevation;
         applyZoomTransform(views[key]);
       }
     }
@@ -1006,6 +1156,9 @@ function restoreDesign(saved) {
     applyZoomTransform(views.top);
   }
   refreshItemList();
+  // The preview triangles were drawn with the default camera; re-render
+  // now that any restored camera angles are applied.
+  redrawPreview();
 }
 
 function autosave() {
