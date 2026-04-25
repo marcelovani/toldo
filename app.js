@@ -23,7 +23,12 @@ const state = {
   base: null,
   selectedItemId: null,
   drag: null, // { kind: "move" | "rotate", item, ... }
+  zoom: 1,
+  panX: 0,
+  panY: 0,
 };
+
+let zoomGroup = null;
 
 const STORAGE_KEY = "toldo:designs";
 const AUTOSAVE_KEY = "toldo:autosave";
@@ -67,6 +72,53 @@ function selectSize(id) {
 
 function clearCanvas() {
   while (canvas.firstChild) canvas.removeChild(canvas.firstChild);
+  zoomGroup = document.createElementNS(SVG_NS, "g");
+  zoomGroup.setAttribute("class", "zoom-group");
+  applyZoomTransform();
+  canvas.appendChild(zoomGroup);
+}
+
+function applyZoomTransform() {
+  if (!zoomGroup) return;
+  zoomGroup.setAttribute(
+    "transform",
+    `translate(${state.panX} ${state.panY}) scale(${state.zoom})`,
+  );
+}
+
+function onCanvasWheel(e) {
+  // Two-finger swipe (and pinch) on macOS trackpad fires wheel events on
+  // the canvas. Capture them and treat vertical delta as zoom around the
+  // cursor position, instead of letting the page scroll.
+  e.preventDefault();
+  const rect = canvas.getBoundingClientRect();
+  const cx = e.clientX - rect.left;
+  const cy = e.clientY - rect.top;
+
+  const worldX = (cx - state.panX) / state.zoom;
+  const worldY = (cy - state.panY) / state.zoom;
+
+  // Use exponential scaling so zoom feels smooth at any current level.
+  const factor = Math.exp(-e.deltaY * 0.005);
+  const newZoom = Math.max(0.2, Math.min(8, state.zoom * factor));
+  if (newZoom === state.zoom) return;
+  state.zoom = newZoom;
+
+  // Keep the world point under the cursor anchored.
+  state.panX = cx - worldX * state.zoom;
+  state.panY = cy - worldY * state.zoom;
+
+  applyZoomTransform();
+  scheduleAutosave();
+}
+
+let autosaveTimer = null;
+function scheduleAutosave() {
+  if (autosaveTimer) clearTimeout(autosaveTimer);
+  autosaveTimer = setTimeout(() => {
+    autosaveTimer = null;
+    autosave();
+  }, 200);
 }
 
 function drawBase() {
@@ -102,7 +154,7 @@ function drawBase() {
   r1.setAttribute("width", rect1.w);
   r1.setAttribute("height", rect1.h);
   r1.setAttribute("class", "toldo-base");
-  canvas.appendChild(r1);
+  zoomGroup.appendChild(r1);
 
   const r2 = document.createElementNS(SVG_NS, "rect");
   r2.setAttribute("x", rect2.x);
@@ -111,7 +163,7 @@ function drawBase() {
   r2.setAttribute("height", rect2.h);
   r2.setAttribute("class", "toldo-base");
   r2.setAttribute("transform", `rotate(90 ${anchorX} ${anchorY})`);
-  canvas.appendChild(r2);
+  zoomGroup.appendChild(r2);
 
   drawRuler(bboxLeft, anchorX, anchorY);
   drawVerticalRuler(anchorY, bboxTop + bboxH, anchorX);
@@ -164,7 +216,7 @@ function drawRuler(leftPx, rightPx, shapeTopPx) {
     tickAt(totalUnits, "edge");
   }
 
-  canvas.appendChild(ruler);
+  zoomGroup.appendChild(ruler);
 }
 
 function drawVerticalRuler(topPx, bottomPx, shapeRightPx) {
@@ -213,7 +265,7 @@ function drawVerticalRuler(topPx, bottomPx, shapeRightPx) {
     tickAt(totalUnits, "edge");
   }
 
-  canvas.appendChild(ruler);
+  zoomGroup.appendChild(ruler);
 }
 
 function trianglePoints(size) {
@@ -385,7 +437,7 @@ function drawTriangle(item) {
     onDeletePointerDown(e, item),
   );
 
-  canvas.appendChild(g);
+  zoomGroup.appendChild(g);
 
   if (state.selectedItemId === item.id) markSelected(item, true);
 }
@@ -456,8 +508,15 @@ function onDeletePointerDown(e, item) {
 }
 
 function clientToSvg(clientX, clientY) {
+  // Map a client (mouse) coordinate to the zoomed/panned world space
+  // that triangle x/y values live in.
   const rect = canvas.getBoundingClientRect();
-  return { x: clientX - rect.left, y: clientY - rect.top };
+  const cx = clientX - rect.left;
+  const cy = clientY - rect.top;
+  return {
+    x: (cx - state.panX) / state.zoom,
+    y: (cy - state.panY) / state.zoom,
+  };
 }
 
 function onPointerMove(e) {
@@ -563,39 +622,52 @@ function persistDesigns(designs) {
   localStorage.setItem(STORAGE_KEY, JSON.stringify(designs));
 }
 
-function serializeItems() {
-  return state.items.map((i) => ({
-    sizeId: i.sizeId,
-    x: i.x,
-    y: i.y,
-    rotation: i.rotation,
-  }));
+function serializeDesign() {
+  return {
+    items: state.items.map((i) => ({
+      sizeId: i.sizeId,
+      x: i.x,
+      y: i.y,
+      rotation: i.rotation,
+    })),
+    zoom: state.zoom,
+    panX: state.panX,
+    panY: state.panY,
+  };
 }
 
-function restoreItems(savedItems) {
-  if (!Array.isArray(savedItems)) return;
-  savedItems.forEach((saved) => {
-    const size = config.triangleSizes.find((s) => s.id === saved.sizeId);
-    if (!size) return;
-    const points = trianglePoints(size);
-    const item = {
-      id: state.nextId++,
-      sizeId: saved.sizeId,
-      x: saved.x,
-      y: saved.y,
-      rotation: saved.rotation,
-      points,
-      radius: pointsRadius(points),
-    };
-    state.items.push(item);
-    drawTriangle(item);
-  });
+function restoreDesign(saved) {
+  // Accept legacy format (a bare items array) as well as the new
+  // { items, zoom, panX, panY } shape.
+  const data = Array.isArray(saved) ? { items: saved } : saved || {};
+  if (Array.isArray(data.items)) {
+    data.items.forEach((s) => {
+      const size = config.triangleSizes.find((sz) => sz.id === s.sizeId);
+      if (!size) return;
+      const points = trianglePoints(size);
+      const item = {
+        id: state.nextId++,
+        sizeId: s.sizeId,
+        x: s.x,
+        y: s.y,
+        rotation: s.rotation,
+        points,
+        radius: pointsRadius(points),
+      };
+      state.items.push(item);
+      drawTriangle(item);
+    });
+  }
+  if (typeof data.zoom === "number") state.zoom = data.zoom;
+  if (typeof data.panX === "number") state.panX = data.panX;
+  if (typeof data.panY === "number") state.panY = data.panY;
+  applyZoomTransform();
   refreshItemList();
 }
 
 function autosave() {
   try {
-    localStorage.setItem(AUTOSAVE_KEY, JSON.stringify(serializeItems()));
+    localStorage.setItem(AUTOSAVE_KEY, JSON.stringify(serializeDesign()));
   } catch {}
 }
 
@@ -603,7 +675,7 @@ function restoreAutosave() {
   try {
     const raw = localStorage.getItem(AUTOSAVE_KEY);
     if (!raw) return;
-    restoreItems(JSON.parse(raw));
+    restoreDesign(JSON.parse(raw));
   } catch {}
 }
 
@@ -631,7 +703,7 @@ function saveCurrentDesign() {
     return;
   }
   designs[trimmed] = {
-    items: serializeItems(),
+    ...serializeDesign(),
     savedAt: new Date().toISOString(),
   };
   persistDesigns(designs);
@@ -649,7 +721,7 @@ function loadDesign(name) {
     return;
   }
   clearItems();
-  restoreItems(design.items);
+  restoreDesign(design);
   autosave();
 }
 
@@ -694,6 +766,7 @@ function refreshDesignList() {
 addBtn.addEventListener("click", addTriangle);
 saveBtn.addEventListener("click", saveCurrentDesign);
 canvas.addEventListener("pointerdown", onCanvasPointerDown);
+canvas.addEventListener("wheel", onCanvasWheel, { passive: false });
 window.addEventListener("pointermove", onPointerMove);
 window.addEventListener("pointerup", onPointerUp);
 window.addEventListener("resize", redraw);
