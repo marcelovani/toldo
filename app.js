@@ -350,8 +350,10 @@ function projectPreview(p, view) {
   const ce = Math.cos(elRad);
   const se = Math.sin(elRad);
   [y, z] = [y * ce - z * se, y * se + z * ce];
-  // Mirror horizontally so the preview's orientation matches expectations.
-  return [-x, -z];
+  // No horizontal mirror: at azimuth 0 / elevation 90 this gives the same
+  // (x, y) layout as the top view, so positions in the preview line up
+  // with the top view at any camera angle.
+  return [x, -z];
 }
 
 function drawBasePreview(view) {
@@ -925,9 +927,7 @@ function onPointerMove(e) {
   } else if (drag.kind === "orbit") {
     const dx = e.clientX - drag.startClientX;
     const dy = e.clientY - drag.startClientY;
-    // Negative dx because the projection is mirrored horizontally; this
-    // keeps "drag right rotates view right" intuitive.
-    view.camera.azimuth = drag.startAzimuth - dx * 0.5;
+    view.camera.azimuth = drag.startAzimuth + dx * 0.5;
     view.camera.elevation = Math.max(
       -89,
       Math.min(89, drag.startElevation - dy * 0.5),
