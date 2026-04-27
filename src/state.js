@@ -3,9 +3,11 @@
 // (state, views) are stable across the lifetime of the app.
 
 export const state = {
-  selectedSizeId: null,
-  // Each item: { id, sizeId, x, y, z, rotX, rotY, rotZ, points, radius,
-  //              apex, viewParts: { top, front, side, preview } }
+  // The shape currently armed in the sidebar, or null. Format:
+  //   { kind: "triangle" | "rectangle", sizeId: string }
+  selectedShape: null,
+  // Each item: { id, shapeKind, sizeId, x, y, z, rotX, rotY, rotZ, points,
+  //              radius, apex, viewParts: { top, front, side, preview } }
   items: [],
   nextId: 1,
   selectedItemId: null,

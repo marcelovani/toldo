@@ -6,8 +6,10 @@ import { SVG_NS, VIEW_KEYS, config } from "./config.js";
 import {
   localApex,
   pointsRadius,
+  rectanglePoints,
   trianglePoints,
   trianglePrismVertices,
+  unitsToPx,
 } from "./geometry.js";
 import {
   onDeletePointerDown,
@@ -21,24 +23,47 @@ import { state, views } from "./state.js";
 
 // ---------- Operations ----------
 
-export function addTriangle() {
-  if (!state.selectedSizeId) return;
-  const size = config.triangleSizes.find((s) => s.id === state.selectedSizeId);
-  if (!size) return;
+// Resolve a (kind, sizeId) pair to local polygon points + a 2D apex used
+// to anchor the rotate handle. Returns null if the size isn't found.
+//   triangle: apex = the smallest-y vertex
+//   rectangle: apex = midpoint of the top edge (so the handle sits above
+//   the centre rather than poking out of a corner)
+export function buildShape(kind, sizeId) {
+  if (kind === "triangle") {
+    const size = config.triangleSizes.find((s) => s.id === sizeId);
+    if (!size) return null;
+    const points = trianglePoints(size);
+    return { points, apex: localApex(points) };
+  }
+  if (kind === "rectangle") {
+    const size = config.rectangleSizes.find((s) => s.id === sizeId);
+    if (!size) return null;
+    const points = rectanglePoints(size);
+    const apex = [0, -unitsToPx(size.h) / 2];
+    return { points, apex };
+  }
+  return null;
+}
 
-  const points = trianglePoints(size);
+export function addShape() {
+  const sel = state.selectedShape;
+  if (!sel) return;
+  const built = buildShape(sel.kind, sel.sizeId);
+  if (!built) return;
+
   const item = {
     id: state.nextId++,
-    sizeId: size.id,
+    shapeKind: sel.kind,
+    sizeId: sel.sizeId,
     x: 0,
     y: 0,
     z: 0,
     rotX: 0,
     rotY: 0,
     rotZ: 0,
-    points,
-    radius: pointsRadius(points),
-    apex: localApex(points),
+    points: built.points,
+    radius: pointsRadius(built.points),
+    apex: built.apex,
     viewParts: {},
   };
   state.items.push(item);

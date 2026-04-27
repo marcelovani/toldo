@@ -35,6 +35,22 @@ export function trianglePoints(size) {
   ];
 }
 
+// Build a rectangle's four local vertices, centred on its centroid, from
+// a size definition { w, h } in units. Vertices are emitted CCW starting
+// from the top-left corner.
+export function rectanglePoints(size) {
+  const w = unitsToPx(size.w);
+  const h = unitsToPx(size.h);
+  const hw = w / 2;
+  const hh = h / 2;
+  return [
+    [-hw, -hh],
+    [hw, -hh],
+    [hw, hh],
+    [-hw, hh],
+  ];
+}
+
 export function pointsRadius(points) {
   return Math.max(...points.map(([x, y]) => Math.hypot(x, y)));
 }
@@ -122,21 +138,27 @@ export function boxTriangles(x, y, z, w, h, d) {
   ];
 }
 
-// 8 triangles for a triangular prism: 2 end caps + 3 rectangular sides.
-export function trianglePrismTrianglesFor(item) {
+// Triangles for an N-gon prism (extruded along local +Z). The top cap is
+// fan-triangulated from vertex 0; the bottom cap is the same fan with
+// reversed winding; each side edge becomes a quad → 2 triangles.
+//   triangle (n=3): 1 + 1 + 6 = 8 triangles
+//   rectangle (n=4): 2 + 2 + 8 = 12 triangles
+export function prismTrianglesFor(item) {
   const t = config.triangleThickness * config.pxPerUnit;
   const top = item.points.map(([px, py]) => worldVertex3D([px, py, 0], item));
   const bot = item.points.map(([px, py]) => worldVertex3D([px, py, t], item));
-  return [
-    [top[0], top[1], top[2]],
-    [bot[0], bot[2], bot[1]],
-    [top[0], bot[0], bot[1]],
-    [top[0], bot[1], top[1]],
-    [top[1], bot[1], bot[2]],
-    [top[1], bot[2], top[2]],
-    [top[2], bot[2], bot[0]],
-    [top[2], bot[0], top[0]],
-  ];
+  const n = top.length;
+  const tris = [];
+  for (let i = 1; i < n - 1; i++) {
+    tris.push([top[0], top[i], top[i + 1]]);
+    tris.push([bot[0], bot[i + 1], bot[i]]);
+  }
+  for (let i = 0; i < n; i++) {
+    const j = (i + 1) % n;
+    tris.push([top[i], bot[i], bot[j]]);
+    tris.push([top[i], bot[j], top[j]]);
+  }
+  return tris;
 }
 
 // All triangles for the whole scene (L-shape boxes + every item prism),
@@ -166,7 +188,7 @@ export function buildSceneTriangles(baseBbox, items) {
     ),
   );
   for (const item of items) {
-    tris.push(...trianglePrismTrianglesFor(item));
+    tris.push(...prismTrianglesFor(item));
   }
   return tris;
 }

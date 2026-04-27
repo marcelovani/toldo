@@ -7,28 +7,51 @@ import { deleteDesign, loadDesign, loadDesigns } from "./persistence.js";
 import { state } from "./state.js";
 import { removeItem } from "./triangle.js";
 
-const sizeList = document.getElementById("size-list");
+const triangleSizeList = document.getElementById("size-list");
+const rectangleSizeList = document.getElementById("rect-size-list");
 const itemList = document.getElementById("item-list");
 const designList = document.getElementById("design-list");
 const addBtn = document.getElementById("add-btn");
 
+// Render both shape lists. Each list item carries data-kind + data-id so
+// selectShape() can highlight the right one and clear the other.
 export function buildSizeList() {
-  sizeList.innerHTML = "";
+  triangleSizeList.innerHTML = "";
   config.triangleSizes.forEach((size) => {
     const li = document.createElement("li");
+    li.dataset.kind = "triangle";
     li.dataset.id = size.id;
     li.innerHTML = `<span>${size.id}</span><small>${size.a} × ${size.b} × ${size.c}</small>`;
-    li.addEventListener("click", () => selectSize(size.id));
-    sizeList.appendChild(li);
+    li.addEventListener("click", () => selectShape("triangle", size.id));
+    triangleSizeList.appendChild(li);
+  });
+
+  rectangleSizeList.innerHTML = "";
+  config.rectangleSizes.forEach((size) => {
+    const li = document.createElement("li");
+    li.dataset.kind = "rectangle";
+    li.dataset.id = size.id;
+    li.innerHTML = `<span>${size.id}</span><small>${size.w} × ${size.h}</small>`;
+    li.addEventListener("click", () => selectShape("rectangle", size.id));
+    rectangleSizeList.appendChild(li);
   });
 }
 
-export function selectSize(id) {
-  state.selectedSizeId = id;
-  [...sizeList.children].forEach((li) => {
-    li.classList.toggle("selected", li.dataset.id === id);
-  });
-  addBtn.disabled = !id;
+export function selectShape(kind, sizeId) {
+  state.selectedShape = { kind, sizeId };
+  highlightSelected();
+  addBtn.disabled = false;
+}
+
+function highlightSelected() {
+  const sel = state.selectedShape;
+  for (const list of [triangleSizeList, rectangleSizeList]) {
+    [...list.children].forEach((li) => {
+      const match =
+        sel && li.dataset.kind === sel.kind && li.dataset.id === sel.sizeId;
+      li.classList.toggle("selected", !!match);
+    });
+  }
 }
 
 export function refreshItemList() {

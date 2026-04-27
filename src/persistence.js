@@ -2,12 +2,12 @@
 // designs in localStorage, and an autosave that mirrors the canvas on
 // every change.
 
-import { AUTOSAVE_KEY, STORAGE_KEY, VIEW_KEYS, config } from "./config.js";
-import { localApex, pointsRadius, trianglePoints } from "./geometry.js";
+import { AUTOSAVE_KEY, STORAGE_KEY, VIEW_KEYS } from "./config.js";
+import { pointsRadius } from "./geometry.js";
 import { refreshDesignList, refreshItemList } from "./sidebar.js";
 import { state, views } from "./state.js";
 import { applyDisplayOptions } from "./tools.js";
-import { drawTriangleAllViews } from "./triangle.js";
+import { buildShape, drawTriangleAllViews } from "./triangle.js";
 import { VIEW_DEFS, applyZoomTransform, redrawPreview } from "./views.js";
 
 // ---------- Named designs ----------
@@ -74,6 +74,7 @@ export function deleteDesign(name) {
 export function serializeDesign() {
   return {
     items: state.items.map((i) => ({
+      shapeKind: i.shapeKind || "triangle",
       sizeId: i.sizeId,
       x: i.x,
       y: i.y,
@@ -104,11 +105,13 @@ export function restoreDesign(saved) {
   const data = Array.isArray(saved) ? { items: saved } : saved || {};
   if (Array.isArray(data.items)) {
     data.items.forEach((s) => {
-      const size = config.triangleSizes.find((sz) => sz.id === s.sizeId);
-      if (!size) return;
-      const points = trianglePoints(size);
+      // Older designs predate rectangles — default to "triangle".
+      const kind = s.shapeKind || "triangle";
+      const built = buildShape(kind, s.sizeId);
+      if (!built) return;
       const item = {
         id: state.nextId++,
+        shapeKind: kind,
         sizeId: s.sizeId,
         x: s.x ?? 0,
         y: s.y ?? 0,
@@ -116,9 +119,9 @@ export function restoreDesign(saved) {
         rotX: s.rotX ?? 0,
         rotY: s.rotY ?? 0,
         rotZ: s.rotZ ?? s.rotation ?? 0,
-        points,
-        radius: pointsRadius(points),
-        apex: localApex(points),
+        points: built.points,
+        radius: pointsRadius(built.points),
+        apex: built.apex,
         viewParts: {},
       };
       state.items.push(item);

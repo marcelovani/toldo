@@ -14,7 +14,7 @@ import { attachInteractions } from "./interactions.js";
 import { restoreAutosave, saveCurrentDesign } from "./persistence.js";
 import { buildSizeList, refreshDesignList } from "./sidebar.js";
 import { applyDisplayOptions, attachToolsListeners } from "./tools.js";
-import { addTriangle } from "./triangle.js";
+import { addShape } from "./triangle.js";
 import { redraw, setupViews } from "./views.js";
 
 // ---------- DOM-driven config readouts ----------
@@ -27,7 +27,7 @@ document.getElementById("rect2-label").textContent =
 
 // ---------- Wire sidebar buttons ----------
 
-document.getElementById("add-btn").addEventListener("click", addTriangle);
+document.getElementById("add-btn").addEventListener("click", addShape);
 document
   .getElementById("save-btn")
   .addEventListener("click", saveCurrentDesign);
